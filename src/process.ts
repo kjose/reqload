@@ -3,7 +3,8 @@ import https, { RequestOptions } from 'https'
 import url from 'node:url'
 
 type DataSet = {
-  [statusCode: number]: number
+  error: number
+  [statusCode: string]: number
 }
 
 export const process = async (cmd: CommandData): Promise<null> => {
@@ -16,16 +17,22 @@ export const process = async (cmd: CommandData): Promise<null> => {
     timeout: 1000,
   }
 
-  const dataset: DataSet = {}
+  const dataset: DataSet = {
+    error: 0,
+  }
   const requestPromises: Promise<void>[] = []
 
-  await makePaquetRequestPaquet(cmd.nbSeconds, requestPromises, params, dataset)
+  console.log(`Sending ${cmd.nbPerSecond} requests each seconds ...`)
+  await makePaquetRequestPaquet(
+    cmd,
+    cmd.nbSeconds,
+    requestPromises,
+    params,
+    dataset
+  )
 
-  try {
-    await Promise.all(requestPromises)
-  } catch (e) {
-    return Promise.reject(e)
-  }
+  console.log('Processing all requests ...')
+  await Promise.all(requestPromises)
 
   console.log(dataset)
 
@@ -33,6 +40,7 @@ export const process = async (cmd: CommandData): Promise<null> => {
 }
 
 const makePaquetRequestPaquet = (
+  cmd: CommandData,
   nbSecondsLeft: number,
   requestPromises: Promise<void>[],
   params: RequestOptions,
@@ -40,29 +48,33 @@ const makePaquetRequestPaquet = (
   rootResolve?: (value: void | PromiseLike<void>) => void
 ): Promise<void> => {
   return new Promise((resolve) => {
-    for (let i = 0; i < 10; i++) {
-      requestPromises.push(makeRequest(params, dataset))
+    rootResolve = rootResolve || resolve
+
+    for (let i = 0; i < cmd.nbPerSecond; i++) {
+      requestPromises.push(makeRequest(cmd, params, dataset))
     }
 
     nbSecondsLeft--
-    console.log(`${nbSecondsLeft} seconds left ...`)
+    console.log(`${nbSecondsLeft} seconds left`)
     if (nbSecondsLeft > 0) {
       setTimeout(async () => {
         await makePaquetRequestPaquet(
+          cmd,
           nbSecondsLeft,
           requestPromises,
           params,
           dataset,
-          rootResolve || resolve
+          rootResolve
         )
       }, 1000)
-    } else if (rootResolve) {
+    } else {
       rootResolve()
     }
   })
 }
 
 const makeRequest = (
+  cmd: CommandData,
   params: RequestOptions,
   dataset: DataSet
 ): Promise<void> => {
@@ -76,7 +88,7 @@ const makeRequest = (
       resolve()
     })
     req.on('error', (e) => {
-      const msg = 'error in http request'
+      dataset.error++
       reject(e)
     })
     req.end()

@@ -21,13 +21,11 @@ export type CommandData = {
   headers?: Header[]
   body?: string
   bodyParams?: BodyParam[]
-  minNbRequestsPerSeconds: number
-  maxNbRequestsPerSeconds: number
+  nbPerSecond: number
   nbSeconds: number
 }
 
-const DEFAULT_MIN_NB_REQUESTS_PER_SECOND = 10
-const DEFAULT_MAX_NB_REQUESTS_PER_SECOND = 100
+const DEFAULT_NB_PER_SECOND = 100
 const DEFAULT_NB_SECONDS = 5
 
 export const cli = async (): Promise<CommandData> => {
@@ -36,8 +34,7 @@ export const cli = async (): Promise<CommandData> => {
     url: '',
     headers: [],
     bodyParams: [],
-    minNbRequestsPerSeconds: DEFAULT_MIN_NB_REQUESTS_PER_SECOND,
-    maxNbRequestsPerSeconds: DEFAULT_MAX_NB_REQUESTS_PER_SECOND,
+    nbPerSecond: DEFAULT_NB_PER_SECOND,
     nbSeconds: DEFAULT_NB_SECONDS,
   }
 
@@ -147,19 +144,9 @@ export const cli = async (): Promise<CommandData> => {
   const finalResponse = await prompts([
     {
       type: 'number',
-      name: 'minNbRequestsPerSeconds',
-      message: 'Enter the minimum number of requests per second.',
-      initial: DEFAULT_MIN_NB_REQUESTS_PER_SECOND,
-      validate: (value) =>
-        value < 0 || value > 100
-          ? `Should be a positive number, maximum 100`
-          : true,
-    },
-    {
-      type: 'number',
-      name: 'maxNbRequestsPerSeconds',
-      message: 'Enter the maximum number of requests per second (max: 100).',
-      initial: DEFAULT_MAX_NB_REQUESTS_PER_SECOND,
+      name: 'nbPerSecond',
+      message: 'Enter the number of requests per second.',
+      initial: DEFAULT_NB_PER_SECOND,
       validate: (value) =>
         value < 0 || value > 100
           ? `Should be a positive number, maximum 100`
@@ -176,8 +163,7 @@ export const cli = async (): Promise<CommandData> => {
           : true,
     },
   ])
-  cmd.minNbRequestsPerSeconds = finalResponse.minNbRequestsPerSeconds
-  cmd.maxNbRequestsPerSeconds = finalResponse.maxNbRequestsPerSeconds
+  cmd.nbPerSecond = finalResponse.nbPerSecond
   cmd.nbSeconds = finalResponse.nbSeconds
 
   return cmd

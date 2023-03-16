@@ -7,7 +7,7 @@ type DataSet = {
   [statusCode: string]: number
 }
 
-export const process = async (cmd: CommandData): Promise<null> => {
+export const process = async (cmd: CommandData): Promise<void> => {
   const urlParts = url.parse(cmd.url)
   const params = {
     hostname: urlParts.hostname!,
@@ -36,7 +36,7 @@ export const process = async (cmd: CommandData): Promise<null> => {
 
   console.log(dataset)
 
-  return null
+  return Promise.resolve()
 }
 
 const makePaquetRequestPaquet = (
@@ -78,7 +78,7 @@ const makeRequest = (
   params: RequestOptions,
   dataset: DataSet
 ): Promise<void> => {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const req = https.request(params, (res) => {
       const statusCode = res.statusCode ?? 0
       if (!dataset[statusCode]) {
@@ -89,7 +89,7 @@ const makeRequest = (
     })
     req.on('error', (e) => {
       dataset.error++
-      reject(e)
+      resolve()
     })
     req.end()
   })

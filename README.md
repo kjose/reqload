@@ -12,6 +12,8 @@ In the end, you get a result with the count of each status code returned.
 
 ![Example](doc/example.png?raw=true 'Example')
 
+## Install
+
 ```
 npm install
 npm start

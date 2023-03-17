@@ -1,8 +1,7 @@
 import prompts from 'prompts'
 
-export type Header = {
-  name: string
-  value: string
+export type Headers = {
+  [name: string]: string
 }
 
 export enum BodyParamType {
@@ -18,24 +17,27 @@ export type BodyParam = {
 export type CommandData = {
   method: string
   url: string
-  headers?: Header[]
+  headers: Headers
   body?: string
   bodyParams?: BodyParam[]
   nbPerSecond: number
   nbSeconds: number
+  timeout_ms: number
 }
 
 const DEFAULT_NB_PER_SECOND = 100
 const DEFAULT_NB_SECONDS = 5
+const DEFAULT_TIMEOUT_MS = 1000
 
 export const cli = async (): Promise<CommandData> => {
   const cmd: CommandData = {
     method: '',
     url: '',
-    headers: [],
+    headers: {},
     bodyParams: [],
     nbPerSecond: DEFAULT_NB_PER_SECOND,
     nbSeconds: DEFAULT_NB_SECONDS,
+    timeout_ms: DEFAULT_TIMEOUT_MS,
   }
 
   const baseResponse = await prompts([
@@ -43,7 +45,7 @@ export const cli = async (): Promise<CommandData> => {
       type: 'text',
       name: 'url',
       message: 'Enter the url you want to request.',
-      initial: 'https://www.kevinjose.fr',
+      initial: 'https://www.example.com',
     },
     {
       type: 'select',
@@ -73,19 +75,18 @@ export const cli = async (): Promise<CommandData> => {
       const headerResponse = await prompts([
         {
           type: 'text',
-          name: 'toto',
+          name: 'name',
           message: 'Name of the header (ex: Authorization)',
+          initial: 'Authorization',
         },
         {
           type: 'text',
           name: 'value',
           message: 'Value of the header',
+          initial: 'Bearer xxxxxxxxxx',
         },
       ])
-      cmd.headers?.push({
-        name: headerResponse.toto,
-        value: headerResponse.value,
-      })
+      cmd.headers[headerResponse.name] = headerResponse.value
 
       await addHeader()
     }
@@ -98,7 +99,9 @@ export const cli = async (): Promise<CommandData> => {
       type: 'confirm',
       name: 'needsBody',
       message: 'Do you want to add a body to your request ?',
-      initial: false,
+      initial: ['POST', 'PUT', 'PATCH'].includes(baseResponse.method)
+        ? true
+        : false,
     })
 
     if (bodyCheckResponse.needsBody) {
@@ -106,12 +109,12 @@ export const cli = async (): Promise<CommandData> => {
         type: 'text',
         name: 'body',
         message:
-          'Copy the body of the request here.\nIf you want dynamic parameters like random strings, integers or increment integer, use the {{myParam}} syntax, they will be configured after.',
-        initial: false,
+          'Copy the body of the request here.\nIf you want dynamic parameters like random strings or increment integer, use the {{myParam}} syntax, they will be configured after.',
+        initial: '{"foo": "{{bar}}"}',
       })
       cmd.body = headerResponse.body
 
-      const bodyParams = headerResponse.body.match(/{{\w+}}/)
+      const bodyParams = [...headerResponse.body.match(/{{\w+}}/g)]
 
       for (let i = 0; i < bodyParams.length; i += 1) {
         // eslint-disable-next-line no-await-in-loop
@@ -148,8 +151,8 @@ export const cli = async (): Promise<CommandData> => {
       message: 'Enter the number of requests per second.',
       initial: DEFAULT_NB_PER_SECOND,
       validate: (value) =>
-        value < 0 || value > 100
-          ? `Should be a positive number, maximum 100`
+        value < 0 || value > 1000
+          ? `Should be a positive number, maximum 1000`
           : true,
     },
     {
@@ -161,6 +164,13 @@ export const cli = async (): Promise<CommandData> => {
         value < 0 || value > 30
           ? `Should be a positive number, maximum 30`
           : true,
+    },
+    {
+      type: 'number',
+      name: 'timeoutMs',
+      message: 'Enter the timeout (millisecond) for each request execution.',
+      initial: DEFAULT_TIMEOUT_MS,
+      validate: (value) => (value < 0 ? `Should be a positive number` : true),
     },
   ])
   cmd.nbPerSecond = finalResponse.nbPerSecond

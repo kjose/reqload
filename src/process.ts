@@ -16,7 +16,7 @@ export const process = async (cmd: CommandData): Promise<void> => {
   const urlParts = url.parse(cmd.url)
   const params = {
     hostname: urlParts.hostname!,
-    port: urlParts.port ?? urlParts.protocol === 'https:' ? 443 : 80,
+    port: urlParts.port ?? (urlParts.protocol === 'https:' ? 443 : 80),
     method: cmd.method,
     path: urlParts.path,
     headers: cmd.headers,

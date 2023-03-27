@@ -9,33 +9,15 @@ type DataSet = {
   [statusCode: string]: number
 }
 
-// increment value at each request
 let dynamicParamIncrement = 1
 
 export const process = async (cmd: CommandData): Promise<void> => {
-  const urlParts = url.parse(cmd.url)
-  const params = {
-    hostname: urlParts.hostname!,
-    port: urlParts.port ?? (urlParts.protocol === 'https:' ? 443 : 80),
-    method: cmd.method,
-    path: urlParts.path,
-    headers: cmd.headers,
-    timeout: cmd.timeout_ms,
-  }
-
-  const dataset: DataSet = {
-    error: 0,
-  }
+  const params = createRequestOptions(cmd)
+  const dataset: DataSet = { error: 0 }
   const requestPromises: Promise<void>[] = []
 
   console.log(`Sending ${cmd.nbPerSecond} requests each second ...`)
-  await makePaquetRequestPaquet(
-    cmd,
-    cmd.nbSeconds,
-    requestPromises,
-    params,
-    dataset
-  )
+  await sendRequestBatches(cmd, requestPromises, params, dataset)
 
   console.log('Processing all requests ...')
   await Promise.all(requestPromises)
@@ -45,38 +27,47 @@ export const process = async (cmd: CommandData): Promise<void> => {
   return Promise.resolve()
 }
 
-const makePaquetRequestPaquet = (
+const createRequestOptions = (cmd: CommandData): RequestOptions => {
+  const urlParts = url.parse(cmd.url)
+  return {
+    hostname: urlParts.hostname!,
+    port: urlParts.port ?? (urlParts.protocol === 'https:' ? 443 : 80),
+    method: cmd.method,
+    path: urlParts.path,
+    headers: cmd.headers,
+    timeout: cmd.timeout_ms,
+  }
+}
+
+const sendRequestBatches = (
   cmd: CommandData,
-  nbSecondsLeft: number,
   requestPromises: Promise<void>[],
   params: RequestOptions,
-  dataset: DataSet,
-  rootResolve?: (value: void | PromiseLike<void>) => void
+  dataset: DataSet
 ): Promise<void> => {
-  return new Promise((resolve) => {
-    rootResolve = rootResolve || resolve
-
-    for (let i = 0; i < cmd.nbPerSecond; i++) {
-      requestPromises.push(makeRequest(cmd, params, dataset))
+  return new Promise(async (resolve) => {
+    for (let i = cmd.nbSeconds; i > 0; i--) {
+      await sendRequests(cmd, requestPromises, params, dataset)
+      console.log(`${i - 1} second${i - 1 > 1 ? 's' : ''} left`)
+      if (i - 1 > 0) {
+        await new Promise((r) => setTimeout(r, 1000))
+      }
     }
-
-    nbSecondsLeft--
-    console.log(`${nbSecondsLeft} second${nbSecondsLeft > 1 ? 's' : ''} left`)
-    if (nbSecondsLeft > 0) {
-      setTimeout(async () => {
-        await makePaquetRequestPaquet(
-          cmd,
-          nbSecondsLeft,
-          requestPromises,
-          params,
-          dataset,
-          rootResolve
-        )
-      }, 1000)
-    } else {
-      rootResolve()
-    }
+    resolve()
   })
+}
+
+const sendRequests = (
+  cmd: CommandData,
+  requestPromises: Promise<void>[],
+  params: RequestOptions,
+  dataset: DataSet
+): Promise<void[]> => {
+  const requests = []
+  for (let i = 0; i < cmd.nbPerSecond; i++) {
+    requests.push(makeRequest(cmd, params, dataset))
+  }
+  return Promise.all(requests)
 }
 
 const makeRequest = (
@@ -97,20 +88,28 @@ const makeRequest = (
       dataset.error++
       resolve()
     })
-    // customise body param
+
     if (cmd.body) {
-      let body = cmd.body
-      cmd.bodyParams?.forEach(
-        (param: BodyParam) =>
-          (body = body.replace(param.name, generateDynamicParams(param.type)))
-      )
-      req.write(body)
+      const requestBody = customizeRequestBody(cmd)
+      req.write(requestBody)
     }
     req.end()
   })
 }
 
-const generateDynamicParams = (type: number): string => {
+const customizeRequestBody = (cmd: CommandData): string => {
+  if (!cmd.body) {
+    throw new Error('No request body provided')
+  }
+
+  let body = cmd.body
+  cmd.bodyParams?.forEach((param: BodyParam) => {
+    body = body.replace(param.name, generateDynamicValue(param.type))
+  })
+  return body
+}
+
+const generateDynamicValue = (type: number): string => {
   switch (type) {
     case BodyParamType.INCREMENT_VALUE:
       dynamicParamIncrement++

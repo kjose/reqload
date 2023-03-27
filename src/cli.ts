@@ -29,18 +29,11 @@ const DEFAULT_NB_PER_SECOND = 100
 const DEFAULT_NB_SECONDS = 5
 const DEFAULT_TIMEOUT_MS = 1000
 
-export const cli = async (): Promise<CommandData> => {
-  const cmd: CommandData = {
-    method: '',
-    url: '',
-    headers: {},
-    bodyParams: [],
-    nbPerSecond: DEFAULT_NB_PER_SECOND,
-    nbSeconds: DEFAULT_NB_SECONDS,
-    timeout_ms: DEFAULT_TIMEOUT_MS,
-  }
-
-  const baseResponse = await prompts([
+const promptBase = async (): Promise<{
+  url: string
+  method: string
+}> => {
+  return await prompts([
     {
       type: 'text',
       name: 'url',
@@ -53,98 +46,94 @@ export const cli = async (): Promise<CommandData> => {
       message: 'Chose the method.',
       choices: [
         { title: 'GET', description: 'GET method', value: 'GET' },
-        { title: 'POST', description: 'POST method', value: 'POST' },
-        { title: 'PUT', description: 'PUT method', value: 'PUT' },
+        { title: 'POST', description: 'POST method' },
       ],
-      initial: 0,
     },
   ])
-  cmd.url = baseResponse.url
-  cmd.method = baseResponse.method
+}
 
-  // Add Headers section
-  const addHeader = async () => {
-    const headerCheckResponse = await prompts({
-      type: 'confirm',
-      name: 'needsHeader',
-      message: 'Do you want to add a header ?',
-      initial: false,
-    })
+const promptHeaders = async (headers: Headers): Promise<void> => {
+  const headerCheckResponse = await prompts({
+    type: 'confirm',
+    name: 'needsHeader',
+    message: 'Do you want to add a header ?',
+    initial: false,
+  })
 
-    if (headerCheckResponse.needsHeader) {
-      const headerResponse = await prompts([
-        {
-          type: 'text',
-          name: 'name',
-          message: 'Name of the header (ex: Authorization)',
-          initial: 'Authorization',
-        },
-        {
-          type: 'text',
-          name: 'value',
-          message: 'Value of the header',
-          initial: 'Bearer xxxxxxxxxx',
-        },
-      ])
-      cmd.headers[headerResponse.name] = headerResponse.value
-
-      await addHeader()
-    }
-  }
-  await addHeader()
-
-  // Add body section
-  const addBody = async () => {
-    const bodyCheckResponse = await prompts({
-      type: 'confirm',
-      name: 'needsBody',
-      message: 'Do you want to add a body to your request ?',
-      initial: ['POST', 'PUT', 'PATCH'].includes(baseResponse.method)
-        ? true
-        : false,
-    })
-
-    if (bodyCheckResponse.needsBody) {
-      const headerResponse = await prompts({
+  if (headerCheckResponse.needsHeader) {
+    const headerResponse = await prompts([
+      {
         type: 'text',
-        name: 'body',
-        message:
-          'Copy the body of the request here.\nIf you want dynamic parameters like random strings or increment integer, use the {{myParam}} syntax, they will be configured after.',
-        initial: '{"foo": "{{bar}}"}',
+        name: 'name',
+        message: 'Name of the header (ex: Authorization)',
+        initial: 'Authorization',
+      },
+      {
+        type: 'text',
+        name: 'value',
+        message: 'Value of the header',
+        initial: 'Bearer xxxxxxxxxx',
+      },
+    ])
+    headers[headerResponse.name] = headerResponse.value
+
+    await promptHeaders(headers)
+  }
+}
+
+const promptBody = async (cmd: CommandData): Promise<void> => {
+  const bodyCheckResponse = await prompts({
+    type: 'confirm',
+    name: 'needsBody',
+    message: 'Do you want to add a body to your request ?',
+    initial: ['POST', 'PUT', 'PATCH'].includes(cmd.method) ? true : false,
+  })
+
+  if (bodyCheckResponse.needsBody) {
+    const headerResponse = await prompts({
+      type: 'text',
+      name: 'body',
+      message:
+        'Copy the body of the request here.\nIf you want dynamic parameters like random strings or increment integer, use the {{myParam}} syntax, they will be configured after.',
+      initial: '{"foo": "{{bar}}"}',
+    })
+    cmd.body = headerResponse.body
+
+    const bodyParams = [...headerResponse.body.match(/{{\w+}}/g)]
+
+    for (let i = 0; i < bodyParams.length; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      const dynamicParamResponse = await prompts({
+        type: 'select',
+        name: 'type',
+        message: `What is the type of the dynamic parameter : ${bodyParams[i]}`,
+        choices: [
+          {
+            title: 'Increment value',
+            description: 'Generates an integer incremented at each call',
+            value: BodyParamType.INCREMENT_VALUE,
+          },
+          {
+            title: 'Random string',
+            description: 'Generates a random string',
+            value: BodyParamType.RANDOM_STRING,
+          },
+        ],
       })
-      cmd.body = headerResponse.body
-
-      const bodyParams = [...headerResponse.body.match(/{{\w+}}/g)]
-
-      for (let i = 0; i < bodyParams.length; i += 1) {
-        // eslint-disable-next-line no-await-in-loop
-        const dynamicParamResponse = await prompts({
-          type: 'select',
-          name: 'type',
-          message: `What is the type of the dynamic parameter : ${bodyParams[i]}`,
-          choices: [
-            {
-              title: 'Increment value',
-              description: 'Generates an integer incremented at each call',
-              value: BodyParamType.INCREMENT_VALUE,
-            },
-            {
-              title: 'Random string',
-              description: 'Generates a random string',
-              value: BodyParamType.RANDOM_STRING,
-            },
-          ],
-        })
-        cmd.bodyParams?.push({
-          name: bodyParams[i],
-          type: dynamicParamResponse.type,
-        })
-      }
+      cmd.bodyParams?.push({
+        name: bodyParams[i],
+        type: dynamicParamResponse.type,
+      })
     }
   }
-  await addBody()
+}
 
-  const finalResponse = await prompts([
+const promptFinal = async (): Promise<{
+  nbPerSecond: number
+  nbSeconds: number
+  timeoutMs: number
+}> => {
+  return await prompts([
     {
       type: 'number',
       name: 'nbPerSecond',
@@ -173,8 +162,32 @@ export const cli = async (): Promise<CommandData> => {
       validate: (value) => (value < 0 ? `Should be a positive number` : true),
     },
   ])
+}
+
+export const cli = async (): Promise<CommandData> => {
+  const cmd: CommandData = {
+    method: '',
+    url: '',
+    headers: {},
+    bodyParams: [],
+    nbPerSecond: DEFAULT_NB_PER_SECOND,
+    nbSeconds: DEFAULT_NB_SECONDS,
+    timeout_ms: DEFAULT_TIMEOUT_MS,
+  }
+
+  const baseResponse = await promptBase()
+  cmd.url = baseResponse.url
+  cmd.method = baseResponse.method
+
+  await promptHeaders(cmd.headers)
+
+  await promptBody(cmd)
+
+  const finalResponse = await promptFinal()
+
   cmd.nbPerSecond = finalResponse.nbPerSecond
   cmd.nbSeconds = finalResponse.nbSeconds
+  cmd.timeout_ms = finalResponse.timeoutMs
 
   return cmd
 }
